@@ -2,8 +2,11 @@
 
 ## 📂 Dataset
 
-**Kaggle Link:**
-https://www.kaggle.com/datasets/banudeep/nthuddd2/data
+**NTHU:**
+Run: `download_nthuddd_dataset.py`
+
+**FER2013:**
+Run: `download_fer2013_dataset.py`
 
 ### 📥 Setup Instructions
 
