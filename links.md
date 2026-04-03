@@ -30,7 +30,7 @@ notdrowsy  → 002
 
 ---
 
-## 📦 Pretrained Models
+## 📦 Google Drive Resources
 
 **Google Drive Link:**
 https://drive.google.com/drive/folders/1sPUmziSdoN6WoN1Af6PG5QGmQqNmlgnc?usp=drive_link
