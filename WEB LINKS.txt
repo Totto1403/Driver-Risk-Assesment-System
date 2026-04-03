@@ -1,0 +1,13 @@
+Dataset:
+https://www.kaggle.com/datasets/banudeep/nthuddd2/data
+
+Note:
+download train_data (drowsy and notdrowsy)
+store in these two directories:
+dataset/
+drowsiness/Training_Evaluation_Dataset/
+
+in "drowsiness/Training_Evaluation_Dataset/" rename drowsy to 001 and notdrowsy to 002
+
+Research Paper:
+https://drive.google.com/drive/folders/18_YjaCFHBS0iib7EI5oh6UsQ6WchAbOi?usp=drive_link
