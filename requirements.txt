@@ -1,0 +1,10 @@
+opencv-python
+protobuf
+mediapipe==0.10.14
+torch
+torchvision
+numpy
+timm
+ultralytics
+scikit-learn
+seaborn
