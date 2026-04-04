@@ -3,21 +3,25 @@ import torch.nn as nn
 import torch.optim as optim
 from torchvision import datasets, transforms
 from torch.utils.data import DataLoader
+import os
 
 # =========================
-# 🧠 Model Definition
+# 🧠 Model Definition (Improved)
 # =========================
 class EmotionCNN(nn.Module):
     def __init__(self):
         super().__init__()
         self.net = nn.Sequential(
-            nn.Conv2d(1, 32, 3), nn.ReLU(), nn.MaxPool2d(2),
-            nn.Conv2d(32, 64, 3), nn.ReLU(), nn.MaxPool2d(2),
-            nn.Conv2d(64, 128, 3), nn.ReLU(), nn.MaxPool2d(2),
+            nn.Conv2d(1, 32, 3), nn.ReLU(), nn.BatchNorm2d(32), nn.MaxPool2d(2),
+
+            nn.Conv2d(32, 64, 3), nn.ReLU(), nn.BatchNorm2d(64), nn.MaxPool2d(2),
+
+            nn.Conv2d(64, 128, 3), nn.ReLU(), nn.BatchNorm2d(128), nn.MaxPool2d(2),
+
             nn.Flatten(),
-            nn.Linear(128*4*4, 128), nn.ReLU(),
+            nn.Linear(128*4*4, 256), nn.ReLU(),
             nn.Dropout(0.5),
-            nn.Linear(128, 7)
+            nn.Linear(256, 7)
         )
 
     def forward(self, x):
@@ -25,7 +29,7 @@ class EmotionCNN(nn.Module):
 
 
 # =========================
-# 📊 Evaluation Function
+# 📊 Evaluation
 # =========================
 def evaluate(model, loader, device):
     model.eval()
@@ -45,57 +49,55 @@ def evaluate(model, loader, device):
 
 
 # =========================
-# 🚀 Main Training
+# 💾 Load previous best accuracy
+# =========================
+def load_best_accuracy(filepath="models/best_accuracy.txt"):
+    if os.path.exists(filepath):
+        with open(filepath, "r") as f:
+            return float(f.read().strip())
+    return 0.0
+
+
+def save_best_accuracy(acc, filepath="models/best_accuracy.txt"):
+    with open(filepath, "w") as f:
+        f.write(str(acc))
+
+
+# =========================
+# 🚀 Training
 # =========================
 def main():
-    # ✅ Device
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
     print("Using:", device)
 
-    # 🎯 Transforms
+    # 🔥 Improved augmentation
     transform = transforms.Compose([
         transforms.Grayscale(),
         transforms.Resize((48, 48)),
         transforms.RandomHorizontalFlip(),
+        transforms.RandomRotation(10),
+        transforms.RandomAffine(0, translate=(0.1, 0.1)),
         transforms.ToTensor(),
         transforms.Normalize((0.5,), (0.5,))
     ])
 
-    print("Step 1: Loading train data...")
+    print("Loading datasets...")
     train_data = datasets.ImageFolder("dataset/fer2013/train", transform=transform)
+    test_data  = datasets.ImageFolder("dataset/fer2013/test", transform=transform)
 
-    print("Step 2: Loading test data...")
-    test_data = datasets.ImageFolder("dataset/fer2013/test", transform=transform)
+    train_loader = DataLoader(train_data, batch_size=64, shuffle=True, num_workers=0, pin_memory=True)
+    test_loader  = DataLoader(test_data, batch_size=64, shuffle=False, num_workers=0, pin_memory=True)
 
-    print("Step 3: Creating DataLoader...")
-    train_loader = DataLoader(
-        train_data,
-        batch_size=128,
-        shuffle=True,
-        num_workers=0,
-        pin_memory=True
-    )
-
-    test_loader = DataLoader(
-        test_data,
-        batch_size=128,
-        shuffle=False,
-        num_workers=0,
-        pin_memory=True
-    )
-
-    print("Step 4: Starting training...")
-
-    # 🧠 Model
     model = EmotionCNN().to(device)
 
-    # ⚙️ Training setup
     criterion = nn.CrossEntropyLoss()
-    optimizer = optim.Adam(model.parameters(), lr=0.001)
+    optimizer = optim.Adam(model.parameters(), lr=0.0005)
 
-    # 🔁 Training loop
-    epochs = 15
-    best_acc = 0
+    epochs = 25
+
+    # 🔥 Load previous best
+    best_acc = load_best_accuracy()
+    print(f"Previous best accuracy: {best_acc:.2f}%")
 
     for epoch in range(epochs):
         model.train()
@@ -112,16 +114,16 @@ def main():
 
             total_loss += loss.item()
 
-        # 📊 Evaluate
         acc = evaluate(model, test_loader, device)
 
         print(f"Epoch {epoch+1}/{epochs}, Loss: {total_loss:.4f}, Accuracy: {acc:.2f}%")
 
-        # 💾 Save best model
+        # 💾 Save only if better than ALL previous runs
         if acc > best_acc:
             best_acc = acc
             torch.save(model.state_dict(), "models/best_emotion_model.pth")
-            print("✅ Best model saved!")
+            save_best_accuracy(best_acc)
+            print("🔥 New BEST model saved across runs!")
 
     print("🎉 Training complete!")
 
@@ -133,7 +135,7 @@ def export_onnx():
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
     model = EmotionCNN().to(device)
-    model.load_state_dict(torch.load("models/best_emotion_model.pth"))
+    model.load_state_dict(torch.load("models/best_emotion_model.pth", weights_only=True))
     model.eval()
 
     dummy_input = torch.randn(1, 1, 48, 48).to(device)
@@ -150,10 +152,8 @@ def export_onnx():
 
 
 # =========================
-# 🟢 Entry Point (IMPORTANT for Windows)
+# 🟢 Entry
 # =========================
 if __name__ == "__main__":
     main()
-
-    # Uncomment after training
-    export_onnx()
+    # export_onnx()

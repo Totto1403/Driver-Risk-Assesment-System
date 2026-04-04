@@ -1,13 +1,5 @@
 """
 STEP 1 — Feature Extraction from NTHU-DDD videos.
-
-Reads every video + its .txt label file, extracts per-frame:
-  EAR_left, EAR_right, EAR_avg, MAR, yaw, pitch, roll, perclos_30
-
-Saves: features_train.csv  features_test.csv
-
-Usage:
-    python step1_extract_features.py --root /path/to/NTHU-DDD
 """
 
 import cv2

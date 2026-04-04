@@ -1,19 +1,5 @@
 """
 STEP 2 — Train classifier on extracted features and produce ALL evaluation outputs.
-
-Trains: Random Forest  +  SVM  +  MLP Neural Network
-Picks best model, evaluates on test set.
-
-Produces:
-  confusion_matrix.png       ← paste into paper
-  training_curves.png        ← paste into paper (for MLP)
-  per_scenario_results.png   ← paste into paper
-  comparison_bar.png         ← paste into paper
-  evaluation_results.txt     ← exact numbers for paper
-
-Usage:
-    python step2_train_and_evaluate.py
-    python step2_train_and_evaluate.py --train features_train.csv --test features_test.csv
 """
 
 import argparse
@@ -36,8 +22,8 @@ from sklearn.metrics import (
 from sklearn.utils.class_weight import compute_sample_weight
 
 parser = argparse.ArgumentParser()
-parser.add_argument("--train", default="features_train.csv")
-parser.add_argument("--test",  default="features_test.csv")
+parser.add_argument("--train", default="drowsiness/output/features_train.csv")
+parser.add_argument("--test",  default="drowsiness/output/features_train.csv")
 args = parser.parse_args()
 
 FEATURES = ["ear_l", "ear_r", "ear_avg", "mar",
