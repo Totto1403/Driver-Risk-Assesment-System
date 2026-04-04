@@ -7,12 +7,11 @@ import timm
 import os
 
 # =============================================================================
-# 🧠 Model Definition (Matches your analyzers.py exactly)
+# 🧠 Model Definition
 # =============================================================================
 class FERModel(nn.Module):
     def __init__(self, model_arch: str = 'resnet34', pretrained: bool = True, num_classes: int = 7):
         super().__init__()
-        # in_chans=3 because we convert 48x48 grayscale to 3-channel RGB for ResNet
         self.model = timm.create_model(
             model_arch, pretrained=pretrained, num_classes=num_classes, in_chans=3
         )
@@ -46,11 +45,10 @@ def main():
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
     print(f"🔥 Starting training on: {device}")
 
-    # 1. Advanced Augmentation for Transfer Learning
-    # ResNet expects 224x224 RGB images with ImageNet normalization
+    # 1. Advanced Augmentation
     train_transform = transforms.Compose([
-        transforms.Grayscale(num_output_channels=3), # Convert to 3-channel
-        transforms.Resize((224, 224)),               # Upscale for ResNet
+        transforms.Grayscale(num_output_channels=3),
+        transforms.Resize((224, 224)),
         transforms.RandomHorizontalFlip(),
         transforms.RandomRotation(15),
         transforms.ColorJitter(brightness=0.2, contrast=0.2),
@@ -58,7 +56,7 @@ def main():
         transforms.Normalize(mean=[0.485, 0.456, 0.406], std=[0.229, 0.224, 0.225])
     ])
 
-    test_transform = transforms.Compose([
+    val_transform = transforms.Compose([
         transforms.Grayscale(num_output_channels=3),
         transforms.Resize((224, 224)),
         transforms.ToTensor(),
@@ -66,23 +64,22 @@ def main():
     ])
 
     print("Loading datasets...")
-    train_data = datasets.ImageFolder("dataset/fer2013/train", transform=train_transform)
-    test_data  = datasets.ImageFolder("dataset/fer2013/test", transform=test_transform)
+    # UPDATED: Pointing to train and val directories
+    train_data = datasets.ImageFolder("dataset/fer2013_val/train", transform=train_transform)
+    val_data   = datasets.ImageFolder("dataset/fer2013_val/val", transform=val_transform)
 
     train_loader = DataLoader(train_data, batch_size=64, shuffle=True, num_workers=4, pin_memory=True)
-    test_loader  = DataLoader(test_data, batch_size=64, shuffle=False, num_workers=4, pin_memory=True)
+    val_loader   = DataLoader(val_data, batch_size=64, shuffle=False, num_workers=4, pin_memory=True)
 
     # 2. Load Pre-trained ResNet-34
     model = FERModel(pretrained=True).to(device)
 
-    # 3. Handle Class Imbalance (Crucial for FER2013)
-    # Approx distribution: [Anger, Disgust, Fear, Happy, Neutral, Sad, Surprise]
-    class_counts = [3995, 436, 4097, 7215, 4965, 4830, 3171] 
+    # 3. Handle Class Imbalance (Recalculated roughly for the new 80% split)
+    class_counts = [3196, 349, 3278, 5772, 3972, 3864, 2537] 
     total_samples = sum(class_counts)
     class_weights = [total_samples / c for c in class_counts]
     weights_tensor = torch.FloatTensor(class_weights).to(device)
 
-    # Apply the weights to the loss function
     criterion = nn.CrossEntropyLoss(weight=weights_tensor)
     
     # 4. Optimizer & Learning Rate Scheduler
@@ -111,22 +108,21 @@ def main():
             if batch_idx % 50 == 0:
                 print(f"Epoch [{epoch+1}/{epochs}] Batch [{batch_idx}/{len(train_loader)}] Loss: {loss.item():.4f}")
 
-        # Evaluate at end of epoch
-        acc = evaluate(model, test_loader, device)
+        # Evaluate at end of epoch using the VALIDATION set
+        acc = evaluate(model, val_loader, device)
         avg_loss = total_loss / len(train_loader)
         
         print(f"====== Epoch {epoch+1} Summary ======")
-        print(f"Avg Loss: {avg_loss:.4f} | Val Accuracy: {acc:.2f}%")
+        print(f"Avg Loss: {avg_loss:.4f} | Validation Accuracy: {acc:.2f}%")
         
         # Step the scheduler based on validation accuracy
         scheduler.step(acc)
 
-        # 5. Save in the EXACT format expected by main_integrated.py
+        # 5. Save model
         if acc > best_acc:
             best_acc = acc
             ckpt_path = f"models/resnet34-epoch.{epoch+1}-val_acc.{acc:.2f}.ckpt"
             
-            # Pack state dict to match your inference code cp["state_dict"]
             checkpoint = {
                 "epoch": epoch + 1,
                 "state_dict": model.state_dict(),
@@ -135,7 +131,7 @@ def main():
             torch.save(checkpoint, ckpt_path)
             print(f"🔥 NEW BEST MODEL SAVED: {ckpt_path}")
 
-    print(f"🎉 Training complete! Best Accuracy: {best_acc:.2f}%")
+    print(f"🎉 Training complete! Best Validation Accuracy: {best_acc:.2f}%")
 
 if __name__ == "__main__":
     main()

@@ -327,7 +327,7 @@ class DrowsinessDetector:
             (f"PERCLOS: {result['perclos']*100:.1f}%",
              (0, 0, 255) if result["perclos"] > self.PERCLOS_ALERT_THRESH else (200, 200, 200)),
             (f"Microsleeps(60s): {result['microsleep_count']}",
-             (0, 0, 255) if result["microsleep_count"] > 5 else (200, 200, 200)),
+             (0, 0, 255) if result["microsleep_count"] >= 5 else (200, 200, 200)),
             (f"Yawns(60s): {result['yawn_count']}",                               (200, 200, 200)),
             (f"Fatigue: {result['fatigue_score']}%",
              (0, 0, 255) if result["fatigue_score"] > 60 else (0, 200, 255)),

@@ -70,8 +70,8 @@ class DriverRiskLogic:
     PERCLOS_HIGH     = 0.30        # 30 % → High risk
 
     # ── Microsleep threshold ──────────────────────────────────────────────────
-    MICROSLEEP_MOD_COUNT   = 3     # 2 microsleeps in 60 s → Moderate
-    MICROSLEEP_HIGH_COUNT  = 6     # 4 microsleeps in 60 s → High
+    MICROSLEEP_MOD_COUNT   = 5     # 5 microsleeps in 60 s → Moderate (Warning)
+    MICROSLEEP_HIGH_COUNT  = 8     # 8 microsleeps in 60 s → High Risk
 
     # ── Late-fusion weights ───────────────────────────────────────────────────
     W_VISUAL    = 0.70

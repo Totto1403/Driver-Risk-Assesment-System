@@ -19,7 +19,10 @@ class FERModel(nn.Module):
         return self.model(x)
 
 # ── Configuration ───────────────────────────────────────────────────────────
-CKPT_PATH = "models/resnet34-epoch.17-val_acc.68.29.ckpt"
+# UPDATE THIS TO YOUR NEWEST MODEL AFTER TRAINING
+CKPT_PATH = "models/resnet34-epoch.15-val_acc.68.26.ckpt" 
+
+# Target the completely unseen TEST directory
 DATA_DIR  = "dataset/fer2013/test"
 CLASSES   = ['Anger', 'Disgust', 'Fear', 'Happiness', 'Neutral', 'Sadness', 'Surprise']
 
@@ -49,7 +52,7 @@ def main():
     y_true = []
     y_pred = []
 
-    print("Running test set predictions...")
+    print("Running unseen test set predictions...")
     with torch.no_grad():
         for images, labels in test_loader:
             images, labels = images.to(device), labels.to(device)
@@ -61,7 +64,7 @@ def main():
 
     # 4. Generate Academic Metrics
     print("\n" + "="*50)
-    print("AFFECTIVE MODULE EVALUATION RESULTS")
+    print("AFFECTIVE MODULE EVALUATION RESULTS (BLIND TEST SET)")
     print("="*50)
     report = classification_report(y_true, y_pred, target_names=CLASSES, digits=4)
     print(report)
@@ -76,15 +79,17 @@ def main():
                 xticklabels=CLASSES, yticklabels=CLASSES,
                 annot_kws={"size": 14, "weight": "bold"})
     
-    plt.title('Confusion Matrix — ResNet-34 FER2013\nOverall Accuracy: 68.29%', 
+    # Grab accuracy from report for title
+    acc = np.trace(cm) / float(np.sum(cm))
+    
+    plt.title(f'Confusion Matrix — ResNet-34 FER2013\nUnseen Test Accuracy: {acc*100:.2f}%', 
               fontsize=14, fontweight='bold', pad=15)
     plt.ylabel('True Emotion', fontsize=12)
     plt.xlabel('Predicted Emotion', fontsize=12)
     plt.tight_layout()
     
-    # Save for the conference paper
-    plt.savefig("emotion_confusion_matrix.png", dpi=300, bbox_inches='tight')
-    print("Saved high-resolution matrix to: emotion_confusion_matrix.png")
+    plt.savefig("emotion_confusion_matrix_final.png", dpi=300, bbox_inches='tight')
+    print("Saved high-resolution matrix to: emotion_confusion_matrix_final.png")
 
 if __name__ == "__main__":
     main()
