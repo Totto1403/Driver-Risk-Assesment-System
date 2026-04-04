@@ -17,7 +17,7 @@ from proj.analyzers import DrowsinessDetector, FerAnalyzer, ObjectDetector, Pose
 from proj.logic import DriverRiskLogic
 
 # ── Paths ─────────────────────────────────────────────────────────────────────
-FER_MODEL_PATH       = "models/resnet34-epoch.17-val_acc.68.29.ckpt" 
+FER_MODEL_PATH = "models/best_fer_resnet34.pth"
 CLASSIFIER_PATH      = "drowsiness/drowsy_classifier.pkl"
 WEBCAM_ID            = 0
 ALERT_DURATION_SEC   = 3
@@ -319,8 +319,13 @@ def main():
 
         if drowsiness_result["face_detected"]:
             results = driver_logic.update(drowsiness_result, pose_landmarks, frame.shape, emotion_label, phone_detected)
-            results["perclos"]    = drowsiness_result.get("perclos", 0.0)
+            
+            # Pass all geometric fatigue metrics to the UI dictionary
+            results["perclos"]     = drowsiness_result.get("perclos", 0.0)
             results["microsleeps"] = drowsiness_result.get("microsleep_count", 0)
+            results["ear"]         = drowsiness_result.get("ear", 0.0)
+            results["adaptive_threshold"] = drowsiness_result.get("adaptive_threshold", 0.0)
+            results["mar"]         = drowsiness_result.get("mar", 0.0)
 
             if results["play_alert"] and alert_msg != "RESET":
                 play_alert()
@@ -335,7 +340,7 @@ def main():
                 cv2.rectangle(frame, (x1, y1), (x2, y2), (0, 0, 255), 3)
                 cv2.putText(frame, "PHONE DETECTED", (x1, y1 - 10), cv2.FONT_HERSHEY_SIMPLEX, 0.8, (0, 0, 255), 2)
         else:
-            cv2.putText(frame, "No driver detected.", (panel_width + 20, 45), cv2.FONT_HERSHEY_SIMPLEX, 1.0, (0, 0, 255), 2)
+            cv2.putText(frame, "No driver detected.", (340, 45), cv2.FONT_HERSHEY_SIMPLEX, 1.0, (0, 0, 255), 2)
 
         # ── 7. FPS accounting ─────────────────────────────────────────────────
         frame_count += 1
@@ -351,11 +356,18 @@ def main():
 
         if key == ord("q"): break
 
-        # FIX: Safe Reset avoids crashing by re-instantiating the classes completely
         if key == ord("r"):
             print("\n[DRAS] MANUAL RESET TRIGGERED. Recalibrating...")
-            drowsiness_detector = DrowsinessDetector(mar_threshold=0.55, use_adaptive_threshold=True)
-            driver_logic = DriverRiskLogic()
+            
+            # 1. Trigger the built-in reset methods
+            drowsiness_detector.reset()
+            driver_logic.reset()
+            
+            # 2. Manually tell the DrowsinessDetector to recalibrate the driver's face
+            drowsiness_detector._calibrated = False
+            drowsiness_detector._calib_ear_samples.clear()
+            
+            # 3. Clear the emotion buffer and UI alerts
             if fer_analyzer is not None: 
                 fer_analyzer._vote_buffer.clear()
             alert_msg, alert_reason, alert_end_time, clf_prob = "", "", 0.0, None

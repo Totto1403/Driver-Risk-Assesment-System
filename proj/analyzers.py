@@ -3,7 +3,7 @@ import numpy as np
 import mediapipe as mp
 import torch
 import torch.nn as nn
-import timm
+import torchvision.models as models
 from collections import deque, Counter
 import time
 from ultralytics import YOLO
@@ -321,21 +321,6 @@ class DrowsinessDetector:
         )
         cv2.polylines(frame, [mouth_pts], True, yawn_col, 1)
 
-        metrics = [
-            (f"EAR: {result['ear']:.3f} (thr:{result['adaptive_threshold']:.3f})", eye_col),
-            (f"MAR: {result['mar']:.2f}",                                          yawn_col),
-            (f"PERCLOS: {result['perclos']*100:.1f}%",
-             (0, 0, 255) if result["perclos"] > self.PERCLOS_ALERT_THRESH else (200, 200, 200)),
-            (f"Microsleeps(60s): {result['microsleep_count']}",
-             (0, 0, 255) if result["microsleep_count"] >= 5 else (200, 200, 200)),
-            (f"Yawns(60s): {result['yawn_count']}",                               (200, 200, 200)),
-            (f"Fatigue: {result['fatigue_score']}%",
-             (0, 0, 255) if result["fatigue_score"] > 60 else (0, 200, 255)),
-        ]
-        for i, (text, colour) in enumerate(metrics):
-            cv2.putText(frame, text, (10, 20 + i * 22),
-                        cv2.FONT_HERSHEY_SIMPLEX, 0.48, colour, 1, cv2.LINE_AA)
-
 
 # ── Pose / Posture Module ──────────────────────────────────────────────────
 class PoseAnalyzer:
@@ -363,11 +348,13 @@ class PoseAnalyzer:
 
 # ── FER Module ─────────────────────────────────────────────────────────────
 class FERModel(nn.Module):
-    def __init__(self, model_arch: str, pretrained: bool, num_classes: int = 7):
+    def __init__(self, num_classes: int = 7):
         super().__init__()
-        self.model = timm.create_model(
-            model_arch, pretrained=pretrained, num_classes=num_classes, in_chans=3
-        )
+        # 1. Load the base torchvision architecture
+        self.model = models.resnet34(weights=None) 
+        # 2. Modify the final layer to match your friend's notebook
+        num_ftrs = self.model.fc.in_features
+        self.model.fc = nn.Linear(num_ftrs, num_classes)
 
     def forward(self, x: torch.Tensor) -> torch.Tensor:
         return self.model(x)
@@ -375,16 +362,11 @@ class FERModel(nn.Module):
 
 class FerAnalyzer:
     """
-    ENHANCED:
-      - Temporal majority-vote buffer (last N predictions) eliminates single-frame
-        emotion jitter that caused false HIGH-RISK alerts.
-      - Confidence gating: if the model is unsure (top prob < MIN_CONFIDENCE),
-        the result is treated as 'Neutral' to avoid noisy risk amplification.
+    ENHANCED: Temporal majority-vote buffer and Confidence gating.
     """
     FER_CATEGORIES = ['neutral', 'happiness', 'surprise', 'sadness', 'anger', 'disgust', 'fear']
-
-    MIN_CONFIDENCE    = 0.40   # below this probability → report "Neutral"
-    VOTE_BUFFER_LEN   = 10     # majority vote over last 10 frames (~0.33 s @ 30 FPS)
+    MIN_CONFIDENCE    = 0.40   
+    VOTE_BUFFER_LEN   = 10     
 
     def __init__(self, model_path: str):
         self.device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
@@ -392,18 +374,15 @@ class FerAnalyzer:
         self.model = self._load_model(model_path)
         if not self.model:
             raise RuntimeError("Failed to load FER model.")
-        print("FER model (ResNet-34) loaded successfully.")
-
-        # Temporal vote buffer
+        print("FER model (Torchvision ResNet-34) loaded successfully.")
         self._vote_buffer: deque[str] = deque(maxlen=self.VOTE_BUFFER_LEN)
 
     # ── Model loading ─────────────────────────────────────────────────────────
     def _load_model(self, model_path: str):
         try:
-            model      = FERModel(model_arch='resnet34', pretrained=False, num_classes=7)
-            cp         = torch.load(model_path, map_location=self.device)
-            state_dict = cp["state_dict"]
-            state_dict = {k.replace("model.model.", ""): v for k, v in state_dict.items()}
+            model = FERModel(num_classes=7)
+            # FIX: Load the raw state_dict exactly as your friend saved it
+            state_dict = torch.load(model_path, map_location=self.device, weights_only=True)
             model.model.load_state_dict(state_dict)
             model.to(self.device)
             model.eval()
