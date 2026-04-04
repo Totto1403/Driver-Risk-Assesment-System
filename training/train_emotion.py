@@ -3,107 +3,101 @@ import torch.nn as nn
 import torch.optim as optim
 from torchvision import datasets, transforms
 from torch.utils.data import DataLoader
+import timm
 import os
 
-# =========================
-# 🧠 Model Definition (Improved)
-# =========================
-class EmotionCNN(nn.Module):
-    def __init__(self):
+# =============================================================================
+# 🧠 Model Definition (Matches your analyzers.py exactly)
+# =============================================================================
+class FERModel(nn.Module):
+    def __init__(self, model_arch: str = 'resnet34', pretrained: bool = True, num_classes: int = 7):
         super().__init__()
-        self.net = nn.Sequential(
-            nn.Conv2d(1, 32, 3), nn.ReLU(), nn.BatchNorm2d(32), nn.MaxPool2d(2),
-
-            nn.Conv2d(32, 64, 3), nn.ReLU(), nn.BatchNorm2d(64), nn.MaxPool2d(2),
-
-            nn.Conv2d(64, 128, 3), nn.ReLU(), nn.BatchNorm2d(128), nn.MaxPool2d(2),
-
-            nn.Flatten(),
-            nn.Linear(128*4*4, 256), nn.ReLU(),
-            nn.Dropout(0.5),
-            nn.Linear(256, 7)
+        # in_chans=3 because we convert 48x48 grayscale to 3-channel RGB for ResNet
+        self.model = timm.create_model(
+            model_arch, pretrained=pretrained, num_classes=num_classes, in_chans=3
         )
 
-    def forward(self, x):
-        return self.net(x)
+    def forward(self, x: torch.Tensor) -> torch.Tensor:
+        return self.model(x)
 
-
-# =========================
-# 📊 Evaluation
-# =========================
+# =============================================================================
+# 📊 Evaluation Function
+# =============================================================================
 def evaluate(model, loader, device):
     model.eval()
     correct = 0
     total = 0
-
+    
     with torch.no_grad():
         for images, labels in loader:
             images, labels = images.to(device), labels.to(device)
             outputs = model(images)
             _, predicted = torch.max(outputs, 1)
-
+            
             total += labels.size(0)
             correct += (predicted == labels).sum().item()
-
+            
     return 100 * correct / total
 
-
-# =========================
-# 💾 Load previous best accuracy
-# =========================
-def load_best_accuracy(filepath="models/best_accuracy.txt"):
-    if os.path.exists(filepath):
-        with open(filepath, "r") as f:
-            return float(f.read().strip())
-    return 0.0
-
-
-def save_best_accuracy(acc, filepath="models/best_accuracy.txt"):
-    with open(filepath, "w") as f:
-        f.write(str(acc))
-
-
-# =========================
-# 🚀 Training
-# =========================
+# =============================================================================
+# 🚀 Main Training Loop
+# =============================================================================
 def main():
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
-    print("Using:", device)
+    print(f"🔥 Starting training on: {device}")
 
-    # 🔥 Improved augmentation
-    transform = transforms.Compose([
-        transforms.Grayscale(),
-        transforms.Resize((48, 48)),
+    # 1. Advanced Augmentation for Transfer Learning
+    # ResNet expects 224x224 RGB images with ImageNet normalization
+    train_transform = transforms.Compose([
+        transforms.Grayscale(num_output_channels=3), # Convert to 3-channel
+        transforms.Resize((224, 224)),               # Upscale for ResNet
         transforms.RandomHorizontalFlip(),
-        transforms.RandomRotation(10),
-        transforms.RandomAffine(0, translate=(0.1, 0.1)),
+        transforms.RandomRotation(15),
+        transforms.ColorJitter(brightness=0.2, contrast=0.2),
         transforms.ToTensor(),
-        transforms.Normalize((0.5,), (0.5,))
+        transforms.Normalize(mean=[0.485, 0.456, 0.406], std=[0.229, 0.224, 0.225])
+    ])
+
+    test_transform = transforms.Compose([
+        transforms.Grayscale(num_output_channels=3),
+        transforms.Resize((224, 224)),
+        transforms.ToTensor(),
+        transforms.Normalize(mean=[0.485, 0.456, 0.406], std=[0.229, 0.224, 0.225])
     ])
 
     print("Loading datasets...")
-    train_data = datasets.ImageFolder("dataset/fer2013/train", transform=transform)
-    test_data  = datasets.ImageFolder("dataset/fer2013/test", transform=transform)
+    train_data = datasets.ImageFolder("dataset/fer2013/train", transform=train_transform)
+    test_data  = datasets.ImageFolder("dataset/fer2013/test", transform=test_transform)
 
-    train_loader = DataLoader(train_data, batch_size=64, shuffle=True, num_workers=0, pin_memory=True)
-    test_loader  = DataLoader(test_data, batch_size=64, shuffle=False, num_workers=0, pin_memory=True)
+    train_loader = DataLoader(train_data, batch_size=64, shuffle=True, num_workers=4, pin_memory=True)
+    test_loader  = DataLoader(test_data, batch_size=64, shuffle=False, num_workers=4, pin_memory=True)
 
-    model = EmotionCNN().to(device)
+    # 2. Load Pre-trained ResNet-34
+    model = FERModel(pretrained=True).to(device)
 
-    criterion = nn.CrossEntropyLoss()
-    optimizer = optim.Adam(model.parameters(), lr=0.0005)
+    # 3. Handle Class Imbalance (Crucial for FER2013)
+    # Approx distribution: [Anger, Disgust, Fear, Happy, Neutral, Sad, Surprise]
+    class_counts = [3995, 436, 4097, 7215, 4965, 4830, 3171] 
+    total_samples = sum(class_counts)
+    class_weights = [total_samples / c for c in class_counts]
+    weights_tensor = torch.FloatTensor(class_weights).to(device)
 
-    epochs = 25
+    # Apply the weights to the loss function
+    criterion = nn.CrossEntropyLoss(weight=weights_tensor)
+    
+    # 4. Optimizer & Learning Rate Scheduler
+    optimizer = optim.AdamW(model.parameters(), lr=0.0003, weight_decay=1e-4)
+    scheduler = optim.lr_scheduler.ReduceLROnPlateau(optimizer, mode='max', factor=0.5, patience=2, verbose=True)
 
-    # 🔥 Load previous best
-    best_acc = load_best_accuracy()
-    print(f"Previous best accuracy: {best_acc:.2f}%")
+    epochs = 20
+    best_acc = 0.0
+    os.makedirs("models", exist_ok=True)
 
     for epoch in range(epochs):
         model.train()
-        total_loss = 0
+        total_loss = 0.0
 
-        for images, labels in train_loader:
+        for batch_idx, (images, labels) in enumerate(train_loader):
             images, labels = images.to(device), labels.to(device)
 
             optimizer.zero_grad()
@@ -113,47 +107,35 @@ def main():
             optimizer.step()
 
             total_loss += loss.item()
+            
+            if batch_idx % 50 == 0:
+                print(f"Epoch [{epoch+1}/{epochs}] Batch [{batch_idx}/{len(train_loader)}] Loss: {loss.item():.4f}")
 
+        # Evaluate at end of epoch
         acc = evaluate(model, test_loader, device)
+        avg_loss = total_loss / len(train_loader)
+        
+        print(f"====== Epoch {epoch+1} Summary ======")
+        print(f"Avg Loss: {avg_loss:.4f} | Val Accuracy: {acc:.2f}%")
+        
+        # Step the scheduler based on validation accuracy
+        scheduler.step(acc)
 
-        print(f"Epoch {epoch+1}/{epochs}, Loss: {total_loss:.4f}, Accuracy: {acc:.2f}%")
-
-        # 💾 Save only if better than ALL previous runs
+        # 5. Save in the EXACT format expected by main_integrated.py
         if acc > best_acc:
             best_acc = acc
-            torch.save(model.state_dict(), "models/best_emotion_model.pth")
-            save_best_accuracy(best_acc)
-            print("🔥 New BEST model saved across runs!")
+            ckpt_path = f"models/resnet34-epoch.{epoch+1}-val_acc.{acc:.2f}.ckpt"
+            
+            # Pack state dict to match your inference code cp["state_dict"]
+            checkpoint = {
+                "epoch": epoch + 1,
+                "state_dict": model.state_dict(),
+                "best_acc": best_acc
+            }
+            torch.save(checkpoint, ckpt_path)
+            print(f"🔥 NEW BEST MODEL SAVED: {ckpt_path}")
 
-    print("🎉 Training complete!")
+    print(f"🎉 Training complete! Best Accuracy: {best_acc:.2f}%")
 
-
-# =========================
-# 🔁 ONNX Export
-# =========================
-def export_onnx():
-    device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
-
-    model = EmotionCNN().to(device)
-    model.load_state_dict(torch.load("models/best_emotion_model.pth", weights_only=True))
-    model.eval()
-
-    dummy_input = torch.randn(1, 1, 48, 48).to(device)
-
-    torch.onnx.export(
-        model,
-        dummy_input,
-        "models/emotion_model.onnx",
-        input_names=["input"],
-        output_names=["output"]
-    )
-
-    print("✅ ONNX model exported!")
-
-
-# =========================
-# 🟢 Entry
-# =========================
 if __name__ == "__main__":
     main()
-    # export_onnx()
