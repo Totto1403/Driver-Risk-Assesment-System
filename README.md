@@ -13,7 +13,7 @@ Official repository for **Continuous Driver Risk Assessment via Real-Time Affect
 
 ---
 
-## 📌 Overview
+## Overview
 
 Most Advanced Driver Assistance Systems (ADAS) rely solely on single-modality detectors using rigid geometric eye closure thresholds. This produces false positives for drivers with naturally narrow eye apertures and completely ignores cognitive-emotional impairments and manual distractions.
 
@@ -61,7 +61,7 @@ Most Advanced Driver Assistance Systems (ADAS) rely solely on single-modality de
 
 ---
 
-## 📊 Benchmark Results
+## Benchmark Results
 
 | Module | Benchmark Dataset | Architecture / Method | Metric Score | Comparison Baseline |
 | :--- | :--- | :--- | :--- | :--- |
@@ -71,7 +71,7 @@ Most Advanced Driver Assistance Systems (ADAS) rely solely on single-modality de
 
 ---
 
-## 📁 Repository Structure
+## Repository Structure
 
 ```
 Driver-Risk-Assesment-System/
@@ -112,7 +112,7 @@ Driver-Risk-Assesment-System/
 
 ---
 
-## 🛠️ Installation & Setup
+## Installation & Setup
 
 ### 1. Clone the Repository
 ```bash
@@ -139,7 +139,7 @@ pip install -r requirements.txt
 
 ---
 
-## 🚀 Running DRAS
+## Running DRAS
 
 To launch the real-time driver risk monitoring interface:
 ```bash
@@ -155,18 +155,4 @@ python app.py
 python app.py --webcam 0             # Target camera index (default: 0)
 python app.py --no-fer               # Run without FER (higher FPS on constrained CPUs)
 python app.py --no-classifier        # Run using geometric rules only
-```
-
----
-
-## 📜 Citation & Academic Context
-
-If using DRAS in academic research, please refer to the project documentation:
-```bibtex
-@article{DRAS2026,
-  title={Continuous Driver Risk Assessment via Real-Time Affective and Behavioral Tracking},
-  author={Bharanee B and Naren Karttik and Sundar J and Sivakami R.},
-  school={School of Computer Science and Engineering, Vellore Institute of Technology, Chennai},
-  year={2026}
-}
 ```
