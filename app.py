@@ -11,14 +11,15 @@ import platform
 import argparse
 import threading
 import numpy as np
+from collections import deque
 
 import proj.utils as utils
 from proj.analyzers import DrowsinessDetector, FerAnalyzer, ObjectDetector, PoseAnalyzer
 from proj.logic import DriverRiskLogic
 
 # ── Paths ─────────────────────────────────────────────────────────────────────
-FER_MODEL_PATH = "models/best_fer_resnet34.pth"
-CLASSIFIER_PATH      = "drowsiness/drowsy_classifier.pkl"
+FER_MODEL_PATH       = "models/best_fer_resnet34.pth"
+CLASSIFIER_PATH      = "models/drowsy_classifier.pkl"
 WEBCAM_ID            = 0
 ALERT_DURATION_SEC   = 3
 
@@ -100,10 +101,15 @@ def compute_head_pose(landmarks, frame_w, frame_h):
     return float(np.degrees(yaw)), float(np.degrees(pitch)), float(np.degrees(roll))
 
 # =============================================================================
-# DROWSINESS CLASSIFIER WRAPPER
+# DROWSINESS CLASSIFIER WRAPPER (TEMPORAL UPGRADE)
 # =============================================================================
 class DrowsinessClassifier:
     DROWSY_PROBABILITY_THRESHOLD = 0.55
+    WINDOW = 30
+    BLINK_THR = 0.20
+    BLINK_MINF = 2
+    YAWN_THR = 0.55
+    YAWN_MINF = 10
 
     def __init__(self, pkl_path: str):
         import joblib
@@ -112,26 +118,96 @@ class DrowsinessClassifier:
         self._scaler      = data["scaler"]
         self._features    = data["features"]
         self._model_name  = data.get("model_name", "Classifier")
-        print(f"[DRAS] Loaded drowsiness classifier: {self._model_name}")
+        
+        # Temporal Memory Buffers
+        self.ear_buf   = deque(maxlen=self.WINDOW)
+        self.mar_buf   = deque(maxlen=self.WINDOW)
+        self.pitch_buf = deque(maxlen=self.WINDOW)
+        self.yaw_buf   = deque(maxlen=self.WINDOW)
+        
+        print(f"[DRAS] Loaded temporal drowsiness classifier: {self._model_name}")
 
-    def predict(self, drowsiness_result: dict, yaw: float, pitch: float, roll: float) -> tuple[bool, float]:
-        ear_avg   = drowsiness_result.get("ear", 0.0)
-        threshold = drowsiness_result.get("adaptive_threshold", 0.30)
-        ear_norm  = ear_avg / (threshold + 1e-6)
-        mar       = drowsiness_result.get("mar", 0.0)
-        perclos   = drowsiness_result.get("perclos", 0.0)
-        cl_len    = drowsiness_result.get("_closure_len_for_clf", 0)
-        yawns     = drowsiness_result.get("yawn_count", 0)
-        microsleeps = drowsiness_result.get("microsleep_count", 0)
+    def reset(self):
+        self.ear_buf.clear()
+        self.mar_buf.clear()
+        self.pitch_buf.clear()
+        self.yaw_buf.clear()
 
+    def predict(self, drowsiness_result: dict, raw_yaw: float, raw_pitch: float, raw_roll: float) -> tuple[bool, float]:
+        # 1. Extract instantaneous features
+        ear_avg  = drowsiness_result.get("ear", 0.0)
+        ear_l    = drowsiness_result.get("ear_l", ear_avg) # Fallback to avg if not explicitly returned
+        ear_r    = drowsiness_result.get("ear_r", ear_avg)
+        mar      = drowsiness_result.get("mar", 0.0)
+        ewma_thr = drowsiness_result.get("adaptive_threshold", 0.25)
+        
+        # 2. Update sliding windows
+        self.ear_buf.append(ear_avg)
+        self.mar_buf.append(mar)
+        self.pitch_buf.append(raw_pitch)
+        self.yaw_buf.append(raw_yaw)
+        
+        ea = np.array(self.ear_buf)
+        ma = np.array(self.mar_buf)
+        pi = np.array(self.pitch_buf)
+        ya = np.array(self.yaw_buf)
+        n  = len(ea)
+
+        # 3. Calculate Temporal Features (Real-Time)
+        ear_mean = float(np.mean(ea)) if n > 0 else 0.0
+        ear_std  = float(np.std(ea)) if n > 0 else 0.0
+        ear_min  = float(np.min(ea)) if n > 0 else 0.0
+        perclos_15 = float(np.sum(ea < ewma_thr) / n) if n > 0 else 0.0
+
+        blinks = 0
+        in_b = False; bf = 0
+        for e in ea:
+            if e < self.BLINK_THR:
+                in_b = True; bf += 1
+            else:
+                if in_b and bf >= self.BLINK_MINF:
+                    blinks += 1
+                in_b = False; bf = 0
+        blink_rate = float(blinks / (n / 30.0 + 1e-6))
+
+        ear_velocity = float(np.polyfit(np.arange(n, dtype=float), ea, 1)[0]) if n > 1 else 0.0
+        mar_mean = float(np.mean(ma)) if n > 0 else 0.0
+        mar_max  = float(np.max(ma)) if n > 0 else 0.0
+
+        yawn_flag = 0
+        yf = 0
+        for m in ma:
+            yf = yf + 1 if m > self.YAWN_THR else 0
+            if yf >= self.YAWN_MINF:
+                yawn_flag = 1; break
+
+        pitch_std = float(np.std(pi)) if n > 1 else 0.0
+        yaw_std   = float(np.std(ya)) if n > 1 else 0.0
+
+        nod_count = 0
+        if n > 2:
+            d = np.diff(pi)
+            signs = np.sign(d)
+            for i in range(len(signs)-1):
+                if signs[i] != 0 and signs[i+1] != 0 and signs[i] != signs[i+1]:
+                    nod_count += 1
+
+        # 4. Assemble the exact 20-feature row required by the Random Forest
         feat_dict = {
-            "ear_avg": ear_avg, "ear_norm": ear_norm, "mar": mar,
-            "yaw": yaw, "pitch": pitch, "roll": roll, "perclos": perclos,
-            "closure_len": cl_len, "yawns": yawns, "microsleeps": microsleeps,
+            "ear_l": ear_l, "ear_r": ear_r, "ear_avg": ear_avg,
+            "mar": mar, "yaw": raw_yaw, "pitch": raw_pitch, "roll": raw_roll,
+            "ear_ewma_thr": ewma_thr,
+            "ear_mean": ear_mean, "ear_std": ear_std, "ear_min": ear_min,
+            "perclos_15": perclos_15, "blink_rate": blink_rate,
+            "ear_velocity": ear_velocity, "mar_mean": mar_mean, "mar_max": mar_max,
+            "yawn_flag": float(yawn_flag), "pitch_std": pitch_std,
+            "yaw_std": yaw_std, "head_nod_count": float(nod_count)
         }
+
         row = np.array([[feat_dict.get(f, 0.0) for f in self._features]], dtype=np.float64)
         row_s = self._scaler.transform(row)
         prob  = float(self._clf.predict_proba(row_s)[0, 1])
+        
         return (prob >= self.DROWSY_PROBABILITY_THRESHOLD), prob
 
 # =============================================================================
@@ -230,7 +306,7 @@ def main():
     cap.set(cv2.CAP_PROP_FRAME_WIDTH,  1280)
     cap.set(cv2.CAP_PROP_FRAME_HEIGHT, 720)
 
-    drowsiness_detector = DrowsinessDetector(mar_threshold=0.55, use_adaptive_threshold=True)
+    drowsiness_detector = DrowsinessDetector(mar_threshold=0.40, use_adaptive_threshold=True)
     pose_analyzer   = PoseAnalyzer()
     object_detector = ObjectDetector()
     driver_logic = DriverRiskLogic()
@@ -326,6 +402,9 @@ def main():
             results["ear"]         = drowsiness_result.get("ear", 0.0)
             results["adaptive_threshold"] = drowsiness_result.get("adaptive_threshold", 0.0)
             results["mar"]         = drowsiness_result.get("mar", 0.0)
+            results["yaw"]         = raw_yaw
+            results["pitch"]       = raw_pitch
+            results["roll"]        = raw_roll
 
             if results["play_alert"] and alert_msg != "RESET":
                 play_alert()
@@ -371,6 +450,10 @@ def main():
             if fer_analyzer is not None: 
                 fer_analyzer._vote_buffer.clear()
             alert_msg, alert_reason, alert_end_time, clf_prob = "", "", 0.0, None
+
+            # 4. Clear the NEW temporal classifier's rolling memory buffers
+            if drowsiness_clf is not None:
+                drowsiness_clf.reset()
 
     cap.release()
     cv2.destroyAllWindows()

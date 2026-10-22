@@ -1,30 +1,18 @@
-============================================================
-DROWSINESS EVALUATION RESULTS — NTHU-DDD
-============================================================
+==================================================
+DROWSINESS DETECTION — EVALUATION RESULTS
+==================================================
 
-Best model   : Random Forest
-Accuracy     : 93.75%
-Precision    : 93.98%
-Recall       : 94.62%
-F1-Score     : 94.30%
-AUC-ROC      : 98.47%
+Best model  : Random Forest (Ours)
+Accuracy    : 93.17%
+Precision   : 93.07%
+Recall      : 94.52%
+F1-Score    : 93.79%
+AUC-ROC     : 98.09%
 
-EffRes-DrowsyNet baseline : 95.14%
-Our model                 : 93.75%
-Improvement               : +-1.39 pp
+All models:
+  Random Forest (Ours)    Acc=93.17%  F1=93.79%
+  MLP Neural Net          Acc=91.30%  F1=92.07%
+  SVM (RBF)               Acc=79.14%  F1=81.61%
+  KNN                     Acc=90.64%  F1=91.63%
 
-Does not beat baseline — see tips below.
-
-All classifiers:
-  Random Forest             Acc=93.75%  F1=94.30% ← BEST
-  Gradient Boosting         Acc=89.03%  F1=89.89%
-  SVM (RBF)                 Acc=82.51%  F1=84.15%
-  MLP Neural Network        Acc=92.62%  F1=93.32%
-
-Per-Scenario:
-  2                   : 92.71%
-  1                   : 94.62%
-
-============================================================
-COPY THESE NUMBERS INTO YOUR PAPER
-============================================================
+==================================================

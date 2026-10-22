@@ -347,24 +347,11 @@ class PoseAnalyzer:
 
 
 # ── FER Module ─────────────────────────────────────────────────────────────
-class FERModel(nn.Module):
-    def __init__(self, num_classes: int = 7):
-        super().__init__()
-        # 1. Load the base torchvision architecture
-        self.model = models.resnet34(weights=None) 
-        # 2. Modify the final layer to match your friend's notebook
-        num_ftrs = self.model.fc.in_features
-        self.model.fc = nn.Linear(num_ftrs, num_classes)
-
-    def forward(self, x: torch.Tensor) -> torch.Tensor:
-        return self.model(x)
-
-
 class FerAnalyzer:
     """
     ENHANCED: Temporal majority-vote buffer and Confidence gating.
     """
-    FER_CATEGORIES = ['neutral', 'happiness', 'surprise', 'sadness', 'anger', 'disgust', 'fear']
+    FER_CATEGORIES = ['angry', 'disgust', 'fear', 'happiness', 'neutral', 'sadness', 'surprise']
     MIN_CONFIDENCE    = 0.40   
     VOTE_BUFFER_LEN   = 10     
 
@@ -380,10 +367,17 @@ class FerAnalyzer:
     # ── Model loading ─────────────────────────────────────────────────────────
     def _load_model(self, model_path: str):
         try:
-            model = FERModel(num_classes=7)
-            # FIX: Load the raw state_dict exactly as your friend saved it
+            # 1. Initialize the standard architecture
+            model = models.resnet34(weights=None)
+            
+            # 2. Modify the final layer to match the 7 classes
+            num_ftrs = model.fc.in_features
+            model.fc = nn.Linear(num_ftrs, 7)
+            
+            # 3. Load the state dictionary directly
             state_dict = torch.load(model_path, map_location=self.device, weights_only=True)
-            model.model.load_state_dict(state_dict)
+            model.load_state_dict(state_dict)
+            
             model.to(self.device)
             model.eval()
             return model

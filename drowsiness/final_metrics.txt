@@ -1,0 +1,12 @@
+==================================================
+DROWSINESS DETECTION — EVALUATION RESULTS
+==================================================
+
+Best model  : Random Forest (Ours)
+Accuracy    : 93.17%
+Precision   : 93.07%
+Recall      : 94.52%
+F1-Score    : 93.79%
+AUC-ROC     : 98.09%
+
+All models:

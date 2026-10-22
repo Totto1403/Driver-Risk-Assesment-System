@@ -1,28 +1,38 @@
-# Virtual environment
+# Virtual environments
 venv/
 env/
 .venv/
 
-# Dataset
+# Datasets
 dataset/
-drowsiness/Training_Evaluation_Dataset/
+Training_Evaluation_Dataset/
+*.csv
 
-# Model files (IMPORTANT)
-*.pt
+# Intermediate checkpoints & temporary models
+*.ckpt
 *.onnx
-*.pkl
 
-# Python cache
+# Allow production weights
+!models/best_fer_resnet34.pth
+!models/drowsy_classifier.pkl
+!models/yolov8n.pt
+!proj/face_landmarker.task
+
+# Python cache & build artifacts
 __pycache__/
-*.pyc
-*.pyo
+*.py[cod]
+*$py.class
+*.so
+.pytest_cache/
 
-# Logs
+# Logs & temp files
 *.log
+*.tmp
 
-# VS Code
+# IDE & Editor settings
 .vscode/
+.idea/
 
-# OS files
+# OS-generated files
 .DS_Store
 Thumbs.db
